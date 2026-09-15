@@ -135,28 +135,29 @@ export function parseRotaTableData(data) {
 
   const targetY = targetWords.reduce((sum, word) => sum + getCenter(word).y, 0) / targetWords.length;
   const dateWords = getDateHeaderWords(words, targetY);
-  if (!dateWords.length) return [];
-
-  const sortedDates = dateWords.sort((first, second) => getCenter(first).x - getCenter(second).x);
   const targetRow = groupWordsByRow(words).sort((first, second) => Math.abs(first.y - targetY) - Math.abs(second.y - targetY))[0];
   const rowWords = targetRow?.words || words.filter((word) => Math.abs(getCenter(word).y - targetY) < 28);
+  const targetRightEdge = Math.max(...targetWords.map((word) => word.bbox.x1));
+  const rowCells = rowWords
+    .filter((word) => getCenter(word).x > targetRightEdge + 20)
+    .sort((first, second) => getCenter(first).x - getCenter(second).x)
+    .map((word) => parseCellValue(word.text))
+    .filter(Boolean);
+  const detectedDates = dateWords.sort((first, second) => getCenter(first).x - getCenter(second).x);
+  const fallbackDays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const dateTokens = detectedDates.length === rowCells.length
+    ? detectedDates.map((word) => word.text)
+    : fallbackDays;
+  if (!rowCells.length) return [];
   const shifts = [];
 
-  sortedDates.forEach((dateWord, index) => {
-    const dateCenter = getCenter(dateWord).x;
-    const previousCenter = index ? getCenter(sortedDates[index - 1]).x : dateCenter - (getCenter(sortedDates[1] || dateWord).x - dateCenter);
-    const nextCenter = sortedDates[index + 1] ? getCenter(sortedDates[index + 1]).x : dateCenter + (dateCenter - getCenter(sortedDates[index - 1] || dateWord).x);
-    const cell = rowWords
-      .filter((word) => getCenter(word).x > (previousCenter + dateCenter) / 2 && getCenter(word).x < (dateCenter + nextCenter) / 2)
-      .sort((first, second) => getCenter(first).x - getCenter(second).x)
-      .map((word) => word.text)
-      .join(' ');
-    const parsedCell = parseCellValue(cell);
+  dateTokens.slice(0, rowCells.length).forEach((dateToken, index) => {
+    const parsedCell = rowCells[index];
     if (!parsedCell) return;
-    const day = dateLabelFromToken(dateWord.text);
+    const day = fallbackDays.includes(dateToken) ? dateToken : dateLabelFromToken(dateToken);
     shifts.push({
       day,
-      date: dateWord.text,
+      date: dateToken,
       start: parsedCell.isOff ? 0 : parsedCell.start,
       end: parsedCell.isOff ? 0 : parsedCell.end,
       start24: parsedCell.isOff ? 'OFF' : parsedCell.start24,
