@@ -239,17 +239,36 @@ export async function extractRotaFromImage(file, onProgress = () => {}) {
     logger: ({ status, progress }) => onProgress({ status, progress })
   });
   try {
-    await worker.setParameters({
-      tessedit_pageseg_mode: '6',
-      preserve_interword_spaces: '1'
-    });
     const preparedImage = await prepareImage(file);
-    const { data } = await worker.recognize(preparedImage);
-    const tableShifts = parseRotaTableData(data);
-    const textTableShifts = tableShifts.length ? [] : parseRotaGridText(data.text);
-    const shifts = tableShifts.length ? tableShifts : textTableShifts;
-    const ignoredLines = data.text.split(/\r?\n/).filter((line) => line.trim()).length - shifts.length;
-    return { text: data.text, shifts, ignoredLines, matchedTableRow: tableShifts.length > 0 };
+    const passes = [
+      { image: file, mode: '6', label: 'Scanning table' },
+      { image: preparedImage, mode: '6', label: 'Enhancing table' },
+      { image: file, mode: '11', label: 'Scanning cell text' }
+    ];
+    let bestResult = { text: '', shifts: [], ignoredLines: 0, matchedTableRow: false };
+
+    for (const pass of passes) {
+      onProgress({ status: pass.label, progress: 0 });
+      await worker.setParameters({
+        tessedit_pageseg_mode: pass.mode,
+        preserve_interword_spaces: '1'
+      });
+      const { data } = await worker.recognize(pass.image);
+      const tableShifts = parseRotaTableData(data);
+      const textTableShifts = tableShifts.length ? [] : parseRotaGridText(data.text);
+      const shifts = tableShifts.length ? tableShifts : textTableShifts;
+      if (shifts.length > bestResult.shifts.length) {
+        bestResult = {
+          text: data.text,
+          shifts,
+          ignoredLines: data.text.split(/\r?\n/).filter((line) => line.trim()).length - shifts.length,
+          matchedTableRow: tableShifts.length > 0
+        };
+      }
+      if (bestResult.shifts.length >= 7) break;
+    }
+
+    return bestResult;
   } finally {
     await worker.terminate();
   }
