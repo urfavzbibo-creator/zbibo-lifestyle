@@ -55,8 +55,8 @@ function cleanToken(value) {
 }
 
 function isTargetToken(value) {
-  const token = cleanToken(value);
-  return token === '5680' || token === '568o' || token === 'ahmed' || token === 'ahmad' || token === 'zbibo';
+  const token = cleanToken(value).replace(/0/g, 'o');
+  return token === '568o' || token === 'ahmed' || token === 'ahmad' || token === 'zbibo';
 }
 
 function getCenter(word) {
@@ -135,8 +135,7 @@ export function parseRotaTableData(data) {
 
   const targetY = targetWords.reduce((sum, word) => sum + getCenter(word).y, 0) / targetWords.length;
   const dateWords = getDateHeaderWords(words, targetY);
-  const targetRow = groupWordsByRow(words).sort((first, second) => Math.abs(first.y - targetY) - Math.abs(second.y - targetY))[0];
-  const rowWords = targetRow?.words || words.filter((word) => Math.abs(getCenter(word).y - targetY) < 28);
+  const rowWords = words.filter((word) => Math.abs(getCenter(word).y - targetY) < 40);
   const targetRightEdge = Math.max(...targetWords.map((word) => word.bbox.x1));
   const rowCells = rowWords
     .filter((word) => getCenter(word).x > targetRightEdge + 20)
@@ -148,10 +147,10 @@ export function parseRotaTableData(data) {
   const dateTokens = detectedDates.length === rowCells.length
     ? detectedDates.map((word) => word.text)
     : fallbackDays;
-  if (!rowCells.length) return [];
+  if (rowCells.length < 7) return [];
   const shifts = [];
 
-  dateTokens.slice(0, rowCells.length).forEach((dateToken, index) => {
+  dateTokens.slice(0, 7).forEach((dateToken, index) => {
     const parsedCell = rowCells[index];
     if (!parsedCell) return;
     const day = fallbackDays.includes(dateToken) ? dateToken : dateLabelFromToken(dateToken);
@@ -164,7 +163,7 @@ export function parseRotaTableData(data) {
       end24: parsedCell.isOff ? 'OFF' : parsedCell.end24,
       demanding: false,
       isOffDay: parsedCell.isOff,
-      matchedBy: targetWords.some((word) => cleanToken(word.text) === '5680') ? 'HR ID 5680' : 'Ahmed zbibo'
+      matchedBy: targetWords.some((word) => cleanToken(word.text).replace(/0/g, 'o') === '568o') ? 'HR ID 5680' : 'Ahmed zbibo'
     });
   });
 
@@ -208,6 +207,33 @@ function parseRotaGridText(text) {
   });
 }
 
+async function prepareImage(file) {
+  if (typeof document === 'undefined') return file;
+  const image = await new Promise((resolve, reject) => {
+    const element = new Image();
+    element.onload = () => resolve(element);
+    element.onerror = reject;
+    element.src = URL.createObjectURL(file);
+  });
+  const scale = 2;
+  const canvas = document.createElement('canvas');
+  canvas.width = image.width * scale;
+  canvas.height = image.height * scale;
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+  for (let index = 0; index < pixels.data.length; index += 4) {
+    const gray = (pixels.data[index] * 0.299) + (pixels.data[index + 1] * 0.587) + (pixels.data[index + 2] * 0.114);
+    const enhanced = gray > 150 ? 255 : gray < 80 ? 0 : gray;
+    pixels.data[index] = enhanced;
+    pixels.data[index + 1] = enhanced;
+    pixels.data[index + 2] = enhanced;
+  }
+  context.putImageData(pixels, 0, 0);
+  URL.revokeObjectURL(image.src);
+  return await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+}
+
 export async function extractRotaFromImage(file, onProgress = () => {}) {
   const worker = await createWorker('eng', 1, {
     logger: ({ status, progress }) => onProgress({ status, progress })
@@ -217,7 +243,8 @@ export async function extractRotaFromImage(file, onProgress = () => {}) {
       tessedit_pageseg_mode: '6',
       preserve_interword_spaces: '1'
     });
-    const { data } = await worker.recognize(file);
+    const preparedImage = await prepareImage(file);
+    const { data } = await worker.recognize(preparedImage);
     const tableShifts = parseRotaTableData(data);
     const textTableShifts = tableShifts.length ? [] : parseRotaGridText(data.text);
     const shifts = tableShifts.length ? tableShifts : textTableShifts;
