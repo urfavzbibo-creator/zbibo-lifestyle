@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { extractRotaFromImage } from './RotaOCR';
+import { extractRotaFromImage, extractRotaFromSpreadsheet } from './RotaOCR';
 
 export default function RotaOCR({ onScheduleExtracted }) {
   const [isScanning, setIsScanning] = useState(false);
@@ -9,7 +9,7 @@ export default function RotaOCR({ onScheduleExtracted }) {
   const [error, setError] = useState('');
   const [fileName, setFileName] = useState('');
 
-  const handleImageUpload = async (event) => {
+  const handleFileUpload = async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
@@ -17,13 +17,16 @@ export default function RotaOCR({ onScheduleExtracted }) {
     setProgress(0);
     setFileName(file.name);
     setError('');
-    setDebugText('Scanning image... please wait.');
+    const isSpreadsheet = /\.(xlsx?|csv)$/i.test(file.name) || /spreadsheet|csv/.test(file.type);
+    setDebugText(isSpreadsheet ? 'Reading spreadsheet... please wait.' : 'Scanning image... please wait.');
 
     try {
-      const result = await extractRotaFromImage(file, ({ status, progress: nextProgress = 0 }) => {
-        setScanStatus(status);
-        setProgress(Math.round(nextProgress * 100));
-      });
+      const result = isSpreadsheet
+        ? await extractRotaFromSpreadsheet(file)
+        : await extractRotaFromImage(file, ({ status, progress: nextProgress = 0 }) => {
+          setScanStatus(status);
+          setProgress(Math.round(nextProgress * 100));
+        });
 
       setDebugText(result.text || 'No raw OCR text returned.');
       if (!result.shifts.length) {
@@ -43,10 +46,10 @@ export default function RotaOCR({ onScheduleExtracted }) {
   return (
     <div className="rota-scanner">
       <label className="dropzone scanner-dropzone">
-        <input type="file" accept="image/*" onChange={handleImageUpload} disabled={isScanning} />
+        <input type="file" accept="image/*,.xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv" onChange={handleFileUpload} disabled={isScanning} />
         <span className="upload-icon" aria-hidden="true">{isScanning ? '...' : '+'}</span>
         <strong>{isScanning ? 'Scanning your rota...' : 'Drop a rota image here'}</strong>
-        <span>{fileName || '974 x 993 table images are supported'}</span>
+        <span>{fileName || 'Upload an image, Excel workbook, or CSV rota'}</span>
       </label>
 
       {isScanning && <div className="scanner-progress" aria-live="polite">

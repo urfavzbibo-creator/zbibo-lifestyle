@@ -1,4 +1,5 @@
 import { createWorker } from 'tesseract.js';
+import * as XLSX from 'xlsx';
 
 const DAY_NAMES = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 const TARGET_NAME_PATTERN = /\bahmed\s+zbibo\b/i;
@@ -118,6 +119,64 @@ function parseCellValue(value) {
   if (start === null) return null;
   const end = (start + 8) % 24;
   return { start, end, start24: format24Hour(start), end24: format24Hour(end) };
+}
+
+function isDateHeader(value) {
+  return DATE_PATTERN.test(String(value).trim()) || /^(sun(day)?|mon(day)?|tue(sday)?|wed(nesday)?|thu(rsday)?|fri(day)?|sat(urday)?)$/i.test(String(value).trim());
+}
+
+function spreadsheetCellToShift(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'number' && value >= 0 && value < 1) {
+    const start = value * 24;
+    const end = (start + 8) % 24;
+    return { start, end, start24: format24Hour(start), end24: format24Hour(end) };
+  }
+  return parseCellValue(String(value));
+}
+
+function spreadsheetDay(value, index) {
+  const text = String(value || '').trim();
+  if (/^(sun|sunday)$/i.test(text)) return 'Sunday';
+  if (/^(mon|monday)$/i.test(text)) return 'Monday';
+  if (/^(tue|tuesday)$/i.test(text)) return 'Tuesday';
+  if (/^(wed|wednesday)$/i.test(text)) return 'Wednesday';
+  if (/^(thu|thursday)$/i.test(text)) return 'Thursday';
+  if (/^(fri|friday)$/i.test(text)) return 'Friday';
+  if (/^(sat|saturday)$/i.test(text)) return 'Saturday';
+  return dateLabelFromToken(text) !== text ? dateLabelFromToken(text) : ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][index];
+}
+
+export async function extractRotaFromSpreadsheet(file) {
+  const workbook = XLSX.read(await file.arrayBuffer(), { cellDates: true });
+  const rows = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1, defval: '' });
+  const headerIndex = rows.findIndex((row) => row.filter(isDateHeader).length >= 3);
+  const header = headerIndex >= 0 ? rows[headerIndex] : rows[0] || [];
+  let dayColumns = header.map((value, index) => isDateHeader(value) ? { index, value } : null).filter(Boolean);
+  if (dayColumns.length < 3) dayColumns = [0, 1, 2, 3, 4, 5, 6].map((index) => ({ index: index + 2, value: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][index] }));
+
+  const targetRow = rows.find((row, index) => index > headerIndex && row.some((value) => /568\s*[0o]/i.test(String(value).replace(/\s/g, ''))) || row.some((value) => cleanToken(String(value)).includes('ahmedzbibo')));
+  if (!targetRow) throw new Error('Excel file does not contain Ahmed Zbibo or HR ID 5680.');
+
+  const shifts = dayColumns.slice(0, 7).map(({ index, value }, dayIndex) => {
+    const cell = spreadsheetCellToShift(targetRow[index]);
+    if (!cell) return null;
+    const isOffDay = cell.isOff === true;
+    return {
+      day: spreadsheetDay(value, dayIndex),
+      date: String(value),
+      start: isOffDay ? 0 : cell.start,
+      end: isOffDay ? 0 : cell.end,
+      start24: isOffDay ? 'OFF' : cell.start24,
+      end24: isOffDay ? 'OFF' : cell.end24,
+      demanding: false,
+      isOffDay,
+      matchedBy: 'HR ID 5680 / Ahmed zbibo',
+      source: targetRow
+    };
+  }).filter(Boolean);
+
+  return { shifts, text: rows.map((row) => row.join(' | ')).join('\n'), ignoredRows: rows.length - 1 };
 }
 
 function dateLabelFromToken(value) {
