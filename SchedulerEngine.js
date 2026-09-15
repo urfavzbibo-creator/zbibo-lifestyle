@@ -103,10 +103,8 @@ class ZbiboCoachEngine {
     const dayOffset = Math.floor(normalizedTotal / 1440);
     const hours = Math.floor(normalizedMinutes / 60);
     const minutes = normalizedMinutes % 60;
-    const period = hours >= 12 ? 'PM' : 'AM';
-    const displayHour = hours % 12 || 12;
     const dayLabel = dayOffset < 0 ? ' (previous day)' : dayOffset > 0 ? ' (next day)' : '';
-    return `${displayHour}:${String(minutes).padStart(2, '0')} ${period}${dayLabel}`;
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}${dayLabel}`;
   }
 }
 

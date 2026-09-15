@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import ZbiboCoachEngine from './SchedulerEngine';
 import { extractRotaFromImage } from './RotaOCR';
 import './styles.css';
@@ -14,6 +14,20 @@ const defaultTrainingSlots = [
   { id: 3, day: 'Friday', intensity: 'low', name: '20-min Kettlebell / Rowing EMOM', details: 'Low-impact conditioning with a controlled pace', durationMinutes: 30, isRest: false },
   { id: 4, day: 'Sunday', intensity: 'rest', name: 'Recovery day', details: 'No training scheduled', durationMinutes: 0, isRest: true }
 ];
+
+const STORAGE_KEY = 'zbibo-lifestyle-state-v1';
+
+function readSavedState() {
+  if (typeof window === 'undefined') return {};
+  try {
+    const saved = window.localStorage.getItem(STORAGE_KEY);
+    return saved ? JSON.parse(saved) : {};
+  } catch {
+    return {};
+  }
+}
+
+const savedState = readSavedState();
 
 function timeToHours(value) {
   const [hours, minutes] = value.split(':').map(Number);
@@ -36,14 +50,31 @@ function shiftFromForm(formData) {
 }
 
 export default function App() {
-  const [shifts, setShifts] = useState(defaultShifts);
-  const [trainingSlots, setTrainingSlots] = useState(defaultTrainingSlots);
-  const [weeklyPlans, setWeeklyPlans] = useState([]);
-  const [activePlan, setActivePlan] = useState(null);
+  const [shifts, setShifts] = useState(savedState.shifts || defaultShifts);
+  const [trainingSlots, setTrainingSlots] = useState(savedState.trainingSlots || defaultTrainingSlots);
+  const [weeklyPlans, setWeeklyPlans] = useState(savedState.weeklyPlans || []);
+  const [activePlan, setActivePlan] = useState(() => {
+    const plans = savedState.weeklyPlans || [];
+    return plans[savedState.activePlanIndex || 0] || null;
+  });
   const [ocrStatus, setOcrStatus] = useState('');
   const [error, setError] = useState('');
   const [showRoutines, setShowRoutines] = useState(true);
   const coach = useMemo(() => new ZbiboCoachEngine(), []);
+
+  useEffect(() => {
+    try {
+      const activePlanIndex = activePlan ? weeklyPlans.findIndex((item) => item === activePlan) : -1;
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        shifts,
+        trainingSlots,
+        weeklyPlans,
+        activePlanIndex: activePlanIndex < 0 ? 0 : activePlanIndex
+      }));
+    } catch {
+      setError('Your browser could not save this plan locally.');
+    }
+  }, [shifts, trainingSlots, weeklyPlans, activePlan]);
 
   const updateTrainingSlot = (id, field, value) => {
     setTrainingSlots((current) => current.map((slot) => slot.id === id
@@ -91,7 +122,8 @@ export default function App() {
       setShifts(result.shifts);
       setWeeklyPlans(plans);
       setActivePlan(plans[0]);
-      setOcrStatus(`${result.shifts.length} shift${result.shifts.length === 1 ? '' : 's'} imported`);
+      const ignoredMessage = result.ignoredLines ? `; ${result.ignoredLines} other row${result.ignoredLines === 1 ? '' : 's'} ignored` : '';
+      setOcrStatus(`${result.shifts.length} shift${result.shifts.length === 1 ? '' : 's'} imported${ignoredMessage}`);
     } catch (ocrError) {
       setOcrStatus('');
       setError(ocrError.message || 'The rota could not be read.');
