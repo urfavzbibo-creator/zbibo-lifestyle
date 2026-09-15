@@ -1,87 +1,84 @@
 class ZbiboCoachEngine {
-  constructor() {
+  constructor(routines = {}) {
     this.minimumSleepMinutes = 8 * 60;
-
+    this.commuteMinutes = 45;
+    this.prepMinutes = 45;
+    this.recoveryMealMinutes = 45;
+    this.criticalEnergyExpenditure = 2800;
     this.routines = {
-      quickConditioning: {
-        name: "Time-Crunch EMOM",
-        details: "Rowing, Medicine Ball Slams, and Kettlebell Swings",
-        durationMinutes: 30
-      },
-      preWorkSafe: {
-        name: "Upper-Body Push",
-        details: "Incline Push-ups and Tricep Extensions",
-        durationMinutes: 60
-      },
-      heavyOffDay: {
-        name: "Heavy Lower-Body",
-        details: "Squats, Deadlifts, Heavy Leg Press",
-        durationMinutes: 90
-      }
+      high: { name: 'Heavy Lower-Body', details: 'Squats, deadlifts, and heavy leg press', durationMinutes: 90, intensity: 'high' },
+      medium: { name: 'Upper-Body Push', details: 'Incline push-ups and tricep extensions', durationMinutes: 60, intensity: 'medium' },
+      low: { name: '20-min Kettlebell / Rowing EMOM', details: 'Low-impact conditioning with a controlled pace', durationMinutes: 30, intensity: 'low' },
+      ...routines
     };
   }
 
-  generateDailyPlan(workStartHour, workEndHour, isNextDayDemanding) {
-    this.validateHour(workStartHour, "workStartHour");
-    this.validateHour(workEndHour, "workEndHour");
+  setRoutines(routines) { this.routines = { ...this.routines, ...routines }; }
 
+  generateDailyPlan(workStartHour, workEndHour, isNextDayDemanding = false, options = {}) {
+    this.validateHour(workStartHour, 'workStartHour');
+    this.validateHour(workEndHour, 'workEndHour');
     const startMinutes = Math.round(workStartHour * 60);
     const endMinutes = Math.round(workEndHour * 60);
     const isOffDay = startMinutes === endMinutes;
-    const workDuration = isOffDay
-      ? 0
-      : (endMinutes - startMinutes + 24 * 60) % (24 * 60);
-    let workoutObj;
+    const workDurationMinutes = isOffDay ? 0 : (endMinutes - startMinutes + 1440) % 1440;
+    const energyExpenditure = options.energyExpenditure ?? this.estimateEnergyExpenditure(workDurationMinutes);
+    const routine = this.selectRoutine({ isOffDay, workDurationMinutes, isNextDayDemanding, energyExpenditure });
 
-    if (isOffDay) {
-      workoutObj = this.routines.heavyOffDay;
-    } else if (workDuration > 8 * 60) {
-      workoutObj = this.routines.quickConditioning;
-    } else if (isNextDayDemanding) {
-      workoutObj = this.routines.preWorkSafe;
-    } else {
-      workoutObj = this.routines.preWorkSafe;
+    if (routine === null) {
+      return { status: 'rest', reason: 'Estimated energy expenditure crossed the recovery threshold.', energyExpenditure, workStart: this.formatTime(startMinutes), timeline: [] };
     }
 
-    const wakeUpTime = startMinutes - workoutObj.durationMinutes - 2 * 60;
-    const gymTime = wakeUpTime + 30;
-    const postWorkoutMeal = gymTime + workoutObj.durationMinutes;
-    const bedTime = wakeUpTime - this.minimumSleepMinutes;
-
+    const workStart = isOffDay ? 9 * 60 : startMinutes;
+    const commuteStart = workStart - this.commuteMinutes;
+    const prepStart = commuteStart - this.prepMinutes;
+    const mealStart = prepStart - this.recoveryMealMinutes;
+    const gymStart = mealStart - routine.durationMinutes;
+    const wakeUp = gymStart - 30;
+    const bedTime = wakeUp - this.minimumSleepMinutes;
     return {
-      bedTime: this.formatTime(bedTime),
-      wakeUp: this.formatTime(wakeUpTime),
-      gym: {
-        time: this.formatTime(gymTime),
-        routine: workoutObj
-      },
-      mealPrep: this.formatTime(postWorkoutMeal),
-      workStart: this.formatTime(startMinutes)
+      status: 'scheduled', energyExpenditure, workDurationMinutes,
+      bedTime: this.formatTime(bedTime), wakeUp: this.formatTime(wakeUp),
+      gym: { time: this.formatTime(gymStart), routine }, mealPrep: this.formatTime(mealStart),
+      recoveryMeal: this.formatTime(mealStart), commute: this.formatTime(commuteStart), workStart: this.formatTime(workStart),
+      timeline: [
+        { label: 'Sleep', time: this.formatTime(bedTime), detail: '8-hour recovery block' },
+        { label: 'Wake', time: this.formatTime(wakeUp), detail: 'Start the day' },
+        { label: 'Gym', time: this.formatTime(gymStart), detail: routine.name },
+        { label: 'Recovery meal', time: this.formatTime(mealStart), detail: '45-minute nutrition block' },
+        { label: 'Prep + commute', time: this.formatTime(prepStart), detail: '45-minute prep, then commute' },
+        { label: 'Work', time: this.formatTime(workStart), detail: isOffDay ? 'Off day anchor' : 'Shift begins' }
+      ]
     };
   }
 
+  generateWeeklyPlan(shifts, options = {}) {
+    return shifts.map((shift, index) => ({ ...shift, day: shift.day || `Day ${index + 1}`, plan: this.generateDailyPlan(shift.start, shift.end, shift.isNextDayDemanding ?? Boolean(shifts[index + 1]?.demanding), { energyExpenditure: shift.energyExpenditure ?? options.energyExpenditure }) }));
+  }
+
+  selectRoutine({ isOffDay, workDurationMinutes, isNextDayDemanding, energyExpenditure }) {
+    if (energyExpenditure >= this.criticalEnergyExpenditure) return null;
+    if (isOffDay || workDurationMinutes < 4 * 60) return this.routines.high;
+    if (isNextDayDemanding || workDurationMinutes > 8 * 60) return this.routines.low;
+    return this.routines.medium;
+  }
+
+  estimateEnergyExpenditure(workDurationMinutes) { return Math.round(1800 + (workDurationMinutes / 60) * 130); }
+
   validateHour(hour, name) {
-    if (!Number.isFinite(hour) || hour < 0 || hour >= 24) {
-      throw new RangeError(`${name} must be between 00:00 and 23:59`);
-    }
+    if (!Number.isFinite(hour) || hour < 0 || hour >= 24) throw new RangeError(`${name} must be between 00:00 and 23:59`);
   }
 
   formatTime(totalMinutes) {
-    totalMinutes = Math.round(totalMinutes);
-    const minutesInDay = 24 * 60;
-    const normalizedMinutes = ((totalMinutes % minutesInDay) + minutesInDay) % minutesInDay;
-    const dayOffset = Math.floor(totalMinutes / minutesInDay);
+    const normalizedTotal = Math.round(totalMinutes);
+    const normalizedMinutes = ((normalizedTotal % 1440) + 1440) % 1440;
+    const dayOffset = Math.floor(normalizedTotal / 1440);
     const hours = Math.floor(normalizedMinutes / 60);
     const minutes = normalizedMinutes % 60;
-    const period = hours >= 12 ? "PM" : "AM";
+    const period = hours >= 12 ? 'PM' : 'AM';
     const displayHour = hours % 12 || 12;
-    const dayLabel = dayOffset < 0
-      ? " (previous day)"
-      : dayOffset > 0
-        ? " (next day)"
-        : "";
-
-    return `${displayHour}:${String(minutes).padStart(2, "0")} ${period}${dayLabel}`;
+    const dayLabel = dayOffset < 0 ? ' (previous day)' : dayOffset > 0 ? ' (next day)' : '';
+    return `${displayHour}:${String(minutes).padStart(2, '0')} ${period}${dayLabel}`;
   }
 }
 
