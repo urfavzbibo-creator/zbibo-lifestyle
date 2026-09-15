@@ -56,7 +56,7 @@ function cleanToken(value) {
 
 function isTargetToken(value) {
   const token = cleanToken(value);
-  return token === '5680' || token === 'ahmed' || token === 'ahmad' || token === 'zbibo';
+  return token === '5680' || token === '568o' || token === 'ahmed' || token === 'ahmad' || token === 'zbibo';
 }
 
 function getCenter(word) {
@@ -64,6 +64,41 @@ function getCenter(word) {
     x: (word.bbox.x0 + word.bbox.x1) / 2,
     y: (word.bbox.y0 + word.bbox.y1) / 2
   };
+}
+
+function groupWordsByRow(words, tolerance = 18) {
+  return words.reduce((rows, word) => {
+    const y = getCenter(word).y;
+    const row = rows.find((candidate) => Math.abs(candidate.y - y) <= tolerance);
+    if (row) {
+      row.words.push(word);
+      row.y = row.words.reduce((sum, item) => sum + getCenter(item).y, 0) / row.words.length;
+    } else {
+      rows.push({ y, words: [word] });
+    }
+    return rows;
+  }, []).sort((first, second) => first.y - second.y);
+}
+
+function getDateHeaderWords(words, targetY) {
+  const headerWords = words
+    .filter((word) => getCenter(word).y < targetY - 25)
+    .sort((first, second) => getCenter(first).x - getCenter(second).x);
+  const dateWords = [];
+
+  for (let index = 0; index < headerWords.length; index += 1) {
+    const first = headerWords[index];
+    const second = headerWords[index + 1];
+    const combined = `${first.text}${second && getCenter(second).x - getCenter(first).x < 80 ? second.text : ''}`;
+    if (DATE_PATTERN.test(combined)) {
+      dateWords.push(second && combined.endsWith(second.text) ? { ...first, text: combined, bbox: { ...first.bbox, x1: second.bbox.x1 } } : first);
+      if (combined.endsWith(second?.text || '\0')) index += 1;
+    } else if (DATE_PATTERN.test(first.text.trim())) {
+      dateWords.push(first);
+    }
+  }
+
+  return dateWords;
 }
 
 function parseCellValue(value) {
@@ -86,16 +121,17 @@ function dateLabelFromToken(value) {
 }
 
 export function parseRotaTableData(data) {
-  const words = (data.words || []).filter((word) => word.text?.trim() && word.confidence >= 20);
+  const words = (data.words || []).filter((word) => word.text?.trim() && word.bbox);
   const targetWords = words.filter((word) => isTargetToken(word.text));
   if (!targetWords.length) return [];
 
   const targetY = targetWords.reduce((sum, word) => sum + getCenter(word).y, 0) / targetWords.length;
-  const dateWords = words.filter((word) => DATE_PATTERN.test(word.text.trim()) && getCenter(word).y < targetY);
+  const dateWords = getDateHeaderWords(words, targetY);
   if (!dateWords.length) return [];
 
   const sortedDates = dateWords.sort((first, second) => getCenter(first).x - getCenter(second).x);
-  const rowWords = words.filter((word) => Math.abs(getCenter(word).y - targetY) < 20);
+  const targetRow = groupWordsByRow(words).sort((first, second) => Math.abs(first.y - targetY) - Math.abs(second.y - targetY))[0];
+  const rowWords = targetRow?.words || words.filter((word) => Math.abs(getCenter(word).y - targetY) < 28);
   const shifts = [];
 
   sortedDates.forEach((dateWord, index) => {
@@ -126,6 +162,43 @@ export function parseRotaTableData(data) {
   return shifts;
 }
 
+function extractDateTokens(text) {
+  return [...text.matchAll(/\b\d{1,2}[-/]\s*[A-Za-z]{3}\s*[-/]\s*\d{2,4}\b/g)].map((match) => match[0].replace(/\s+/g, ''));
+}
+
+function parseRotaGridText(text) {
+  const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const dateTokens = extractDateTokens(text);
+  const targetLine = lines.find((line) => {
+    const normalized = cleanToken(line).replace(/568o/g, '5680');
+    return normalized.includes('ahmedzbibo') || normalized.includes('5680');
+  });
+  if (!targetLine || !dateTokens.length) return [];
+
+  const rowValues = [...targetLine.matchAll(/\b(?:off|\d{1,2}(?::\d{2})?)\b/gi)]
+    .map((match) => parseCellValue(match[0]))
+    .filter(Boolean);
+  if (rowValues.length < dateTokens.length) return [];
+
+  const matchedBy = cleanToken(targetLine).replace(/568o/g, '5680').includes('5680') ? 'HR ID 5680' : 'Ahmed zbibo';
+  return dateTokens.map((dateToken, index) => {
+    const cell = rowValues[index];
+    const day = dateLabelFromToken(dateToken);
+    return {
+      day,
+      date: dateToken,
+      start: cell.isOff ? 0 : cell.start,
+      end: cell.isOff ? 0 : cell.end,
+      start24: cell.isOff ? 'OFF' : cell.start24,
+      end24: cell.isOff ? 'OFF' : cell.end24,
+      demanding: false,
+      isOffDay: cell.isOff,
+      matchedBy,
+      source: targetLine
+    };
+  });
+}
+
 export async function extractRotaFromImage(file, onProgress = () => {}) {
   const worker = await createWorker('eng', 1, {
     logger: ({ status, progress }) => onProgress({ status, progress })
@@ -133,7 +206,8 @@ export async function extractRotaFromImage(file, onProgress = () => {}) {
   try {
     const { data } = await worker.recognize(file);
     const tableShifts = parseRotaTableData(data);
-    const shifts = tableShifts.length ? tableShifts : parseRotaText(data.text);
+    const textTableShifts = tableShifts.length ? [] : parseRotaGridText(data.text);
+    const shifts = tableShifts.length ? tableShifts : textTableShifts;
     const ignoredLines = data.text.split(/\r?\n/).filter((line) => line.trim()).length - shifts.length;
     return { text: data.text, shifts, ignoredLines, matchedTableRow: tableShifts.length > 0 };
   } finally {
