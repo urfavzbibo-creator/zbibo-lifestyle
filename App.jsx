@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import ZbiboCoachEngine from './SchedulerEngine';
-import { extractRotaFromImage } from './RotaOCR';
+import RotaOCR from './RotaOCR.jsx';
 import './styles.css';
 
 const defaultShifts = [
@@ -108,29 +108,16 @@ export default function App() {
     }
   };
 
-  const handleImageUpload = async (event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+  const handleScheduleExtracted = (result) => {
+    const plans = coach.generateWeeklyPlan(result.shifts.map((shift) => ({
+      ...shift,
+      trainingSlot: shift.isOffDay ? { name: 'Recovery day', details: 'No training scheduled', durationMinutes: 0, isRest: true } : routineForDay(shift.day)
+    })));
+    setShifts(result.shifts);
+    setWeeklyPlans(plans);
+    setActivePlan(plans[0]);
+    setOcrStatus(`${result.shifts.length} day cells imported${result.ignoredLines ? `; ${result.ignoredLines} other rows ignored` : ''}`);
     setError('');
-    setOcrStatus('Reading rota image...');
-    try {
-      const result = await extractRotaFromImage(file, ({ status, progress }) => {
-        setOcrStatus(`${status} ${Math.round(progress * 100)}%`);
-      });
-      if (!result.shifts.length) throw new Error('No work-time pairs were found. Try a clearer rota image.');
-      const plans = coach.generateWeeklyPlan(result.shifts.map((shift) => ({
-        ...shift,
-        trainingSlot: shift.isOffDay ? { name: 'Recovery day', details: 'No training scheduled', durationMinutes: 0, isRest: true } : routineForDay(shift.day)
-      })));
-      setShifts(result.shifts);
-      setWeeklyPlans(plans);
-      setActivePlan(plans[0]);
-      const ignoredMessage = result.ignoredLines ? `; ${result.ignoredLines} other row${result.ignoredLines === 1 ? '' : 's'} ignored` : '';
-      setOcrStatus(`${result.shifts.length} shift${result.shifts.length === 1 ? '' : 's'} imported${ignoredMessage}`);
-    } catch (ocrError) {
-      setOcrStatus('');
-      setError(ocrError.message || 'The rota could not be read.');
-    }
   };
 
   return (
@@ -148,12 +135,7 @@ export default function App() {
             <div><p className="eyebrow">01 / Ingest</p><h2>Bring in your rota</h2></div>
             <span className="status-dot" aria-hidden="true" />
           </div>
-          <label className="dropzone">
-            <input type="file" accept="image/*" onChange={handleImageUpload} />
-            <span className="upload-icon" aria-hidden="true">+</span>
-            <strong>Drop a rota image here</strong>
-            <span>PNG, JPG, or a phone photo. OCR runs in your browser.</span>
-          </label>
+          <RotaOCR onScheduleExtracted={handleScheduleExtracted} />
           {ocrStatus && <p className="progress-message">{ocrStatus}</p>}
           <div className="or-divider"><span>or enter a single shift</span></div>
           <form onSubmit={handleGenerate}>

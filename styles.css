@@ -43,6 +43,16 @@ h2 { font-size: 1.45rem; font-weight: 400; margin: 0 0 1.5rem; }
 .dropzone input { display: none; }
 .dropzone strong { color: var(--text-main); font-size: 0.95rem; }
 .dropzone > span:last-child { font-size: 0.75rem; }
+.scanner-dropzone { min-height: 145px; }
+.scanner-dropzone input:disabled + .upload-icon { opacity: 0.6; }
+.scanner-progress { margin-top: 1rem; }
+.scanner-progress-top { color: var(--text-muted); display: flex; font-size: 0.75rem; justify-content: space-between; }
+.scanner-progress-top strong { color: #c68af3; }
+.scanner-progress-track { background: rgba(255, 255, 255, 0.08); border-radius: 99px; height: 0.35rem; margin-top: 0.5rem; overflow: hidden; }
+.scanner-progress-track span { background: var(--neon-purple); box-shadow: 0 0 10px var(--neon-purple-glow); display: block; height: 100%; transition: width 180ms ease; }
+.ocr-diagnostic { border-top: 1px solid var(--glass-border); color: var(--text-muted); margin-top: 1rem; padding-top: 0.8rem; }
+.ocr-diagnostic summary { cursor: pointer; font-size: 0.75rem; }
+.ocr-diagnostic pre { background: #050507; border: 1px solid var(--glass-border); border-radius: 5px; color: #8fe3c2; font: 0.7rem/1.45 monospace; max-height: 190px; margin: 0.8rem 0 0; overflow: auto; padding: 0.8rem; white-space: pre-wrap; }
 .upload-icon { align-items: center; border: 1px solid var(--neon-purple); border-radius: 50%; color: #c68af3; display: flex; font-size: 1.5rem; height: 2.2rem; justify-content: center; width: 2.2rem; }
 .progress-message { color: #c68af3; font-size: 0.8rem; margin-bottom: 0; }
 .or-divider { align-items: center; color: var(--text-muted); display: flex; font-size: 0.7rem; gap: 0.8rem; margin: 1.4rem 0; text-transform: uppercase; }
