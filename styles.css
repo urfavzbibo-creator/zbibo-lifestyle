@@ -93,6 +93,7 @@ input:focus { border-color: #c68af3; outline: 2px solid var(--neon-purple-soft);
 .timeline-item strong { display: block; font-size: 0.9rem; font-weight: 400; margin-bottom: 0.2rem; }
 .result-mark { border: 1px solid #c68af3; color: #c68af3; font-size: 0.65rem; padding: 0.35rem 0.5rem; }
 .rest-copy { color: var(--text-muted); line-height: 1.6; margin: 0; }
+.schedule-note { background: rgba(157, 78, 221, 0.1); border-left: 2px solid var(--neon-purple); color: var(--text-muted); font-size: 0.82rem; line-height: 1.5; margin: -0.5rem 0 1.25rem; padding: 0.7rem 0.8rem; }.schedule-note strong { color: var(--text-main); }
 .week-list { margin-top: 2rem; }
 .week-intro { color: var(--text-muted); font-size: 0.85rem; line-height: 1.5; margin-top: -0.8rem; }
 .week-board { border-top: 1px solid var(--glass-border); margin-top: 1.25rem; }

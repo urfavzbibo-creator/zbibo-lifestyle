@@ -92,13 +92,11 @@ export default function App() {
     setTrainingSlots((current) => current.filter((slot) => slot.id !== id));
   };
 
-  const routineForDay = (day) => trainingSlots.find((slot) => slot.day.toLowerCase() === day.toLowerCase()) || trainingSlots.find((slot) => !slot.isRest);
-
   const handleGenerate = (event) => {
     event.preventDefault();
     try {
       const shift = shiftFromForm(new FormData(event.currentTarget));
-      const plans = coach.generateWeeklyPlan([{ ...shift, trainingSlot: routineForDay('Today') }]);
+      const plans = coach.generateWeeklyPlan([shift]);
       setShifts([shift]);
       setWeeklyPlans(plans);
       setActivePlan(plans[0]);
@@ -111,7 +109,7 @@ export default function App() {
   const handleScheduleExtracted = (result) => {
     const plans = coach.generateWeeklyPlan(result.shifts.map((shift) => ({
       ...shift,
-      trainingSlot: shift.isOffDay ? { name: 'Recovery day', details: 'No training scheduled', durationMinutes: 0, isRest: true } : routineForDay(shift.day)
+      trainingSlot: shift.isOffDay ? { name: 'Recovery day', details: 'No training scheduled', durationMinutes: 0, isRest: true } : undefined
     })));
     setShifts(result.shifts);
     setWeeklyPlans(plans);
@@ -126,7 +124,7 @@ export default function App() {
         <div className="brand-row"><span className="brand-mark">Z</span><span>zbibo / lifestyle architecture</span></div>
         <p className="eyebrow">Your week, intelligently arranged</p>
         <h1 className="header-greeting">Make room for <span className="highlight">what keeps you well.</span></h1>
-        <p className="hero-copy">Upload a rota or enter a shift. Zbibo protects recovery first, then builds the training around it.</p>
+        <p className="hero-copy">Upload your work rota. Zbibo keeps those shifts as work, then builds gym timing, meals, sleep, and wake time around them.</p>
       </header>
 
       <main>
@@ -174,6 +172,7 @@ export default function App() {
         {activePlan && <section className="glass-card result-card active-task-glow">
           <div className="section-heading"><div><p className="eyebrow">03 / Architecture</p><h2>{activePlan.plan.status === 'rest' ? 'Recovery is the plan' : 'Your timeline is ready'}</h2></div><span className="result-mark">{activePlan.plan.status === 'rest' ? 'REST' : 'LIVE'}</span></div>
           {activePlan.plan.status === 'rest' ? <p className="rest-copy">{activePlan.plan.reason} The engine has removed training so your next day can carry less fatigue.</p> : <>
+            <p className="schedule-note">Work shift: <strong>{hoursToTime(activePlan.start)} - {hoursToTime(activePlan.end)}</strong>. Gym and recovery blocks below were generated around it.</p>
             <div className="metric-strip"><div><span>Energy load</span><strong>{activePlan.plan.energyExpenditure} kcal</strong></div><div><span>Sleep protected</span><strong>8 hours</strong></div><div><span>Routine</span><strong>{activePlan.plan.gym.routine.intensity}</strong></div></div>
             <div className="timeline">{activePlan.plan.timeline.map((item) => <div className="timeline-item" key={`${item.label}-${item.time}`}><span className="timeline-time">{item.time}</span><span className="timeline-line" /><div><strong>{item.label}</strong><span>{item.detail}</span></div></div>)}</div>
           </>}

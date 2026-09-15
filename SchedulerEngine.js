@@ -4,7 +4,7 @@ class ZbiboCoachEngine {
     this.commuteMinutes = 45;
     this.prepMinutes = 45;
     this.recoveryMealMinutes = 45;
-    this.criticalEnergyExpenditure = 2800;
+    this.criticalEnergyExpenditure = 3200;
     this.routines = {
       high: { name: 'Heavy Lower-Body', details: 'Squats, deadlifts, and heavy leg press', durationMinutes: 90, intensity: 'high' },
       medium: { name: 'Upper-Body Push', details: 'Incline push-ups and tricep extensions', durationMinutes: 60, intensity: 'medium' },
