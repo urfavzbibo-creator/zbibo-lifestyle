@@ -118,7 +118,10 @@ export default function App() {
         setOcrStatus(`${status} ${Math.round(progress * 100)}%`);
       });
       if (!result.shifts.length) throw new Error('No work-time pairs were found. Try a clearer rota image.');
-      const plans = coach.generateWeeklyPlan(result.shifts.map((shift) => ({ ...shift, trainingSlot: routineForDay(shift.day) })));
+      const plans = coach.generateWeeklyPlan(result.shifts.map((shift) => ({
+        ...shift,
+        trainingSlot: shift.isOffDay ? { name: 'Recovery day', details: 'No training scheduled', durationMinutes: 0, isRest: true } : routineForDay(shift.day)
+      })));
       setShifts(result.shifts);
       setWeeklyPlans(plans);
       setActivePlan(plans[0]);

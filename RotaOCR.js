@@ -88,17 +88,25 @@ function getDateHeaderWords(words, targetY) {
 
   for (let index = 0; index < headerWords.length; index += 1) {
     const first = headerWords[index];
-    const second = headerWords[index + 1];
-    const combined = `${first.text}${second && getCenter(second).x - getCenter(first).x < 80 ? second.text : ''}`;
-    if (DATE_PATTERN.test(combined)) {
-      dateWords.push(second && combined.endsWith(second.text) ? { ...first, text: combined, bbox: { ...first.bbox, x1: second.bbox.x1 } } : first);
-      if (combined.endsWith(second?.text || '\0')) index += 1;
-    } else if (DATE_PATTERN.test(first.text.trim())) {
-      dateWords.push(first);
+    const parts = [first];
+    let nextIndex = index + 1;
+    while (nextIndex < headerWords.length && getCenter(headerWords[nextIndex]).x - getCenter(parts[parts.length - 1]).x < 72) {
+      parts.push(headerWords[nextIndex]);
+      nextIndex += 1;
+    }
+    const combined = parts.map((part) => part.text).join('').replace(/[|]/g, '1');
+    const dateMatch = combined.match(/(\d{1,2})[-/](?:[A-Za-z]{3}|\d{1,2})[-/]\d{2,4}/);
+    if (dateMatch) {
+      dateWords.push({ ...first, text: dateMatch[0], bbox: { ...first.bbox, x1: parts[parts.length - 1].bbox.x1 } });
+      index = nextIndex - 1;
     }
   }
 
   return dateWords;
+}
+
+function parseLooseDateHeaders(text) {
+  return [...text.matchAll(/\b\d{1,2}\s*[-/]\s*(?:[A-Za-z]{3}|\d{1,2})\s*[-/]\s*\d{2,4}\b/g)].map((match) => match[0].replace(/\s+/g, ''));
 }
 
 function parseCellValue(value) {
@@ -168,7 +176,7 @@ function extractDateTokens(text) {
 
 function parseRotaGridText(text) {
   const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  const dateTokens = extractDateTokens(text);
+  const dateTokens = extractDateTokens(text).length ? extractDateTokens(text) : parseLooseDateHeaders(text);
   const targetLine = lines.find((line) => {
     const normalized = cleanToken(line).replace(/568o/g, '5680');
     return normalized.includes('ahmedzbibo') || normalized.includes('5680');
@@ -204,6 +212,10 @@ export async function extractRotaFromImage(file, onProgress = () => {}) {
     logger: ({ status, progress }) => onProgress({ status, progress })
   });
   try {
+    await worker.setParameters({
+      tessedit_pageseg_mode: '6',
+      preserve_interword_spaces: '1'
+    });
     const { data } = await worker.recognize(file);
     const tableShifts = parseRotaTableData(data);
     const textTableShifts = tableShifts.length ? [] : parseRotaGridText(data.text);
