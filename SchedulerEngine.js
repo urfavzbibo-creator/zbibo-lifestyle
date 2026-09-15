@@ -23,9 +23,9 @@ class ZbiboCoachEngine {
     const isOffDay = startMinutes === endMinutes;
     const workDurationMinutes = isOffDay ? 0 : (endMinutes - startMinutes + 1440) % 1440;
     const energyExpenditure = options.energyExpenditure ?? this.estimateEnergyExpenditure(workDurationMinutes);
-    const routine = this.selectRoutine({ isOffDay, workDurationMinutes, isNextDayDemanding, energyExpenditure });
+    const routine = options.routine || this.selectRoutine({ isOffDay, workDurationMinutes, isNextDayDemanding, energyExpenditure });
 
-    if (routine === null) {
+    if (routine === null || routine.isRest) {
       return { status: 'rest', reason: 'Estimated energy expenditure crossed the recovery threshold.', energyExpenditure, workStart: this.formatTime(startMinutes), timeline: [] };
     }
 
@@ -53,7 +53,35 @@ class ZbiboCoachEngine {
   }
 
   generateWeeklyPlan(shifts, options = {}) {
-    return shifts.map((shift, index) => ({ ...shift, day: shift.day || `Day ${index + 1}`, plan: this.generateDailyPlan(shift.start, shift.end, shift.isNextDayDemanding ?? Boolean(shifts[index + 1]?.demanding), { energyExpenditure: shift.energyExpenditure ?? options.energyExpenditure }) }));
+    let fatigueCarry = 0;
+
+    return shifts.map((shift, index) => {
+      const nextShift = shifts[index + 1];
+      const workDurationMinutes = this.getWorkDurationMinutes(shift.start, shift.end);
+      const nextWorkDurationMinutes = nextShift ? this.getWorkDurationMinutes(nextShift.start, nextShift.end) : 0;
+      const nextDayDemanding = shift.isNextDayDemanding
+        ?? shift.demanding
+        ?? nextWorkDurationMinutes >= 8 * 60;
+      const estimatedEnergy = shift.energyExpenditure
+        ?? options.energyExpenditure
+        ?? this.estimateEnergyExpenditure(workDurationMinutes);
+      const plan = this.generateDailyPlan(shift.start, shift.end, nextDayDemanding, {
+        energyExpenditure: estimatedEnergy + fatigueCarry,
+        routine: shift.trainingSlot
+      });
+
+      fatigueCarry = plan.status === 'rest'
+        ? 0
+        : Math.max(0, fatigueCarry + Math.max(0, estimatedEnergy - 2200) - 500);
+
+      return { ...shift, day: shift.day || `Day ${index + 1}`, plan };
+    });
+  }
+
+  getWorkDurationMinutes(workStartHour, workEndHour) {
+    const startMinutes = Math.round(workStartHour * 60);
+    const endMinutes = Math.round(workEndHour * 60);
+    return startMinutes === endMinutes ? 0 : (endMinutes - startMinutes + 1440) % 1440;
   }
 
   selectRoutine({ isOffDay, workDurationMinutes, isNextDayDemanding, energyExpenditure }) {

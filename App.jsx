@@ -8,11 +8,12 @@ const defaultShifts = [
   { day: 'Tuesday', start: 9, end: 17, demanding: false }
 ];
 
-const defaultRoutines = {
-  high: { name: 'Heavy Lower-Body', details: 'Squats, deadlifts, and heavy leg press', durationMinutes: 90, intensity: 'high' },
-  medium: { name: 'Upper-Body Push', details: 'Incline push-ups and tricep extensions', durationMinutes: 60, intensity: 'medium' },
-  low: { name: '20-min Kettlebell / Rowing EMOM', details: 'Low-impact conditioning with a controlled pace', durationMinutes: 30, intensity: 'low' }
-};
+const defaultTrainingSlots = [
+  { id: 1, day: 'Monday', intensity: 'high', name: 'Heavy Lower-Body', details: 'Squats, deadlifts, and heavy leg press', durationMinutes: 90, isRest: false },
+  { id: 2, day: 'Wednesday', intensity: 'medium', name: 'Upper-Body Push', details: 'Incline push-ups and tricep extensions', durationMinutes: 60, isRest: false },
+  { id: 3, day: 'Friday', intensity: 'low', name: '20-min Kettlebell / Rowing EMOM', details: 'Low-impact conditioning with a controlled pace', durationMinutes: 30, isRest: false },
+  { id: 4, day: 'Sunday', intensity: 'rest', name: 'Recovery day', details: 'No training scheduled', durationMinutes: 0, isRest: true }
+];
 
 function timeToHours(value) {
   const [hours, minutes] = value.split(':').map(Number);
@@ -36,19 +37,37 @@ function shiftFromForm(formData) {
 
 export default function App() {
   const [shifts, setShifts] = useState(defaultShifts);
-  const [routines, setRoutines] = useState(defaultRoutines);
+  const [trainingSlots, setTrainingSlots] = useState(defaultTrainingSlots);
   const [weeklyPlans, setWeeklyPlans] = useState([]);
   const [activePlan, setActivePlan] = useState(null);
   const [ocrStatus, setOcrStatus] = useState('');
   const [error, setError] = useState('');
-  const [showRoutines, setShowRoutines] = useState(false);
-  const coach = useMemo(() => new ZbiboCoachEngine(routines), [routines]);
+  const [showRoutines, setShowRoutines] = useState(true);
+  const coach = useMemo(() => new ZbiboCoachEngine(), []);
+
+  const updateTrainingSlot = (id, field, value) => {
+    setTrainingSlots((current) => current.map((slot) => slot.id === id
+      ? { ...slot, [field]: field === 'durationMinutes' ? Number(value) : value, ...(field === 'intensity' ? { isRest: value === 'rest' } : {}) }
+      : slot));
+  };
+
+  const addTrainingSlot = () => {
+    setTrainingSlots((current) => [...current, {
+      id: Date.now(), day: 'New day', intensity: 'medium', name: 'New training session', details: 'Add your exercises', durationMinutes: 45, isRest: false
+    }]);
+  };
+
+  const removeTrainingSlot = (id) => {
+    setTrainingSlots((current) => current.filter((slot) => slot.id !== id));
+  };
+
+  const routineForDay = (day) => trainingSlots.find((slot) => slot.day.toLowerCase() === day.toLowerCase()) || trainingSlots.find((slot) => !slot.isRest);
 
   const handleGenerate = (event) => {
     event.preventDefault();
     try {
       const shift = shiftFromForm(new FormData(event.currentTarget));
-      const plans = coach.generateWeeklyPlan([shift]);
+      const plans = coach.generateWeeklyPlan([{ ...shift, trainingSlot: routineForDay('Today') }]);
       setShifts([shift]);
       setWeeklyPlans(plans);
       setActivePlan(plans[0]);
@@ -56,13 +75,6 @@ export default function App() {
     } catch (generationError) {
       setError(generationError.message);
     }
-  };
-
-  const handleRoutineChange = (intensity, field, value) => {
-    setRoutines((current) => ({
-      ...current,
-      [intensity]: { ...current[intensity], [field]: field === 'durationMinutes' ? Number(value) : value }
-    }));
   };
 
   const handleImageUpload = async (event) => {
@@ -75,7 +87,7 @@ export default function App() {
         setOcrStatus(`${status} ${Math.round(progress * 100)}%`);
       });
       if (!result.shifts.length) throw new Error('No work-time pairs were found. Try a clearer rota image.');
-      const plans = coach.generateWeeklyPlan(result.shifts);
+      const plans = coach.generateWeeklyPlan(result.shifts.map((shift) => ({ ...shift, trainingSlot: routineForDay(shift.day) })));
       setShifts(result.shifts);
       setWeeklyPlans(plans);
       setActivePlan(plans[0]);
@@ -124,14 +136,22 @@ export default function App() {
           <button className="section-toggle" type="button" onClick={() => setShowRoutines((visible) => !visible)} aria-expanded={showRoutines}>
             <span><p className="eyebrow">02 / Personalize</p><h2>Your training library</h2></span><span className="toggle-icon">{showRoutines ? '-' : '+'}</span>
           </button>
-          {showRoutines && <div className="routine-editor">{Object.entries(routines).map(([intensity, routine]) => (
-            <div className="routine-row" key={intensity}>
-              <span className={`intensity intensity-${intensity}`}>{intensity}</span>
-              <input aria-label={`${intensity} routine name`} value={routine.name} onChange={(event) => handleRoutineChange(intensity, 'name', event.target.value)} />
-              <input aria-label={`${intensity} routine duration`} type="number" min="10" max="180" step="5" value={routine.durationMinutes} onChange={(event) => handleRoutineChange(intensity, 'durationMinutes', event.target.value)} />
-              <span className="minutes-label">min</span>
-            </div>
-          ))}</div>}
+          {showRoutines && <div className="routine-editor">
+            <p className="routine-help">Build as many training or recovery slots as your week needs. Each day can be assigned its own intensity and duration.</p>
+            {trainingSlots.map((slot) => (
+              <div className="routine-row" key={slot.id}>
+                <input aria-label="Training day" value={slot.day} onChange={(event) => updateTrainingSlot(slot.id, 'day', event.target.value)} />
+                <select aria-label="Training intensity" value={slot.intensity} onChange={(event) => updateTrainingSlot(slot.id, 'intensity', event.target.value)}>
+                  <option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option><option value="rest">Rest day</option>
+                </select>
+                <input aria-label="Training name" value={slot.name} onChange={(event) => updateTrainingSlot(slot.id, 'name', event.target.value)} disabled={slot.isRest} />
+                <input aria-label="Training duration" type="number" min="0" max="240" step="5" value={slot.durationMinutes} onChange={(event) => updateTrainingSlot(slot.id, 'durationMinutes', event.target.value)} disabled={slot.isRest} />
+                <span className="minutes-label">min</span>
+                <button className="remove-slot" type="button" aria-label={`Remove ${slot.day} training slot`} onClick={() => removeTrainingSlot(slot.id)}>x</button>
+              </div>
+            ))}
+            <button className="add-slot" type="button" onClick={addTrainingSlot}>+ Add training or rest day</button>
+          </div>}
         </section>
 
         {activePlan && <section className="glass-card result-card active-task-glow">
@@ -142,7 +162,16 @@ export default function App() {
           </>}
         </section>}
 
-        {weeklyPlans.length > 1 && <section className="week-list"><p className="eyebrow">Imported week</p>{weeklyPlans.map((item) => <button className={`week-item ${item === activePlan ? 'is-active' : ''}`} key={`${item.day}-${item.start}`} onClick={() => setActivePlan(item)}><span>{item.day}</span><strong>{hoursToTime(item.start)} - {hoursToTime(item.end)}</strong><small>{item.plan.status === 'rest' ? 'Recovery day' : item.plan.gym.routine.name}</small></button>)}</section>}
+        {weeklyPlans.length > 0 && <section className="week-list">
+          <div className="section-heading"><div><p className="eyebrow">04 / Regenerated week</p><h2>Your schedule, day by day</h2></div><span className="result-mark">{weeklyPlans.length} DAYS</span></div>
+          <p className="week-intro">This week was rebuilt from your uploaded rota. Select any day to inspect its complete timeline.</p>
+          <div className="week-board">{weeklyPlans.map((item) => <button className={`week-item ${item === activePlan ? 'is-active' : ''}`} key={`${item.day}-${item.start}`} onClick={() => setActivePlan(item)}>
+            <span className="week-day">{item.day}</span>
+            <strong>{item.plan.status === 'rest' ? 'Recovery day' : `${hoursToTime(item.start)} - ${hoursToTime(item.end)}`}</strong>
+            <small>{item.plan.status === 'rest' ? item.plan.reason : item.plan.gym.routine.name}</small>
+            <span className={`week-status ${item.plan.status}`}>{item.plan.status === 'rest' ? 'REST' : 'READY'}</span>
+          </button>)}</div>
+        </section>}
       </main>
     </div>
   );
