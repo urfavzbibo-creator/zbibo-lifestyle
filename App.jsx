@@ -197,7 +197,7 @@ export default function App() {
         {weeklyPlans.length > 0 && <section className="week-list">
           <div className="section-heading"><div><p className="eyebrow">04 / Regenerated week</p><h2>Your schedule, day by day</h2></div><span className="result-mark">{weeklyPlans.length} DAYS</span></div>
           <p className="week-intro">This week was rebuilt from your uploaded rota. Select any day to inspect its complete timeline.</p>
-          <div className="week-board">{weeklyPlans.map((item) => <button className={`week-item ${item === activePlan ? 'is-active' : ''}`} key={`${item.day}-${item.start}`} onClick={() => setActivePlan(item)}>
+          <div className="week-board">{weeklyPlans.map((item) => <button className={`week-item rota-cell-${item.plan.status} ${item.plan.workDurationMinutes === 0 ? 'rota-cell-off' : ''} ${item === activePlan ? 'is-active' : ''}`} key={`${item.day}-${item.start}`} onClick={() => setActivePlan(item)}>
             <span className="week-day">{item.day}</span>
             <strong>{item.plan.status === 'rest' ? 'Recovery day' : `${hoursToTime(item.start)} - ${hoursToTime(item.end)}`}</strong>
             <small>{item.plan.status === 'rest' ? item.plan.reason : item.plan.gym.routine.name}</small>
